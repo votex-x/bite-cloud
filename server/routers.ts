@@ -282,6 +282,33 @@ MIT`,
         return { success: true };
       }),
 
+    // Create file (for upload functionality)
+    createFile: protectedProcedure
+      .input(
+        z.object({
+          biteId: z.string(),
+          filename: z.string(),
+          content: z.string().optional().nullable(),
+          fileType: z.string(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Check permissions (Owner or Developer)
+        const permissions = await getBitePermissions(input.biteId);
+        const userPerm = permissions.find(p => p.userId === ctx.user.id);
+        if (!userPerm || (userPerm.role !== "owner" && userPerm.role !== "developer")) {
+          throw new Error("Unauthorized");
+        }
+
+        await createBiteFile({
+          biteId: input.biteId,
+          filename: input.filename,
+          content: input.content,
+          fileType: input.fileType,
+        });
+        return { success: true };
+      }),
+
     // Delete file
     deleteFile: protectedProcedure
       .input(
