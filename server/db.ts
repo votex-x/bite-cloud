@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, bites, biteFiles, biteMetadata, bitePermissions, biteVersions, Bite, BiteFile } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -35,7 +35,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     };
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "email", "loginMethod", "avatar"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
@@ -89,4 +89,174 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// BITES QUERIES
+
+export async function createBite(bite: {
+  biteId: string;
+  name: string;
+  description?: string;
+  createdBy: number;
+  tags?: string[];
+  framework?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(bites).values({
+    biteId: bite.biteId,
+    name: bite.name,
+    description: bite.description,
+    createdBy: bite.createdBy,
+    tags: JSON.stringify(bite.tags || []),
+    framework: bite.framework || "vanilla",
+  });
+
+  return result;
+}
+
+export async function getBiteById(biteId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(bites).where(eq(bites.biteId, biteId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getPublicBites(limit = 20, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(bites)
+    .where(eq(bites.isPublic, 1))
+    .orderBy(desc(bites.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function getUserBites(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(bites)
+    .where(eq(bites.createdBy, userId))
+    .orderBy(desc(bites.createdAt));
+}
+
+export async function updateBite(biteId: string, data: Partial<Bite>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.update(bites).set(data).where(eq(bites.biteId, biteId));
+}
+
+// BITE FILES QUERIES
+
+export async function createBiteFile(file: {
+  biteId: string;
+  filename: string;
+  content: string;
+  fileType: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.insert(biteFiles).values(file);
+}
+
+export async function getBiteFiles(biteId: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(biteFiles).where(eq(biteFiles.biteId, biteId));
+}
+
+export async function updateBiteFile(biteId: string, filename: string, content: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .update(biteFiles)
+    .set({ content, updatedAt: new Date() })
+    .where(and(eq(biteFiles.biteId, biteId), eq(biteFiles.filename, filename)));
+}
+
+export async function deleteBiteFile(biteId: string, filename: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .delete(biteFiles)
+    .where(and(eq(biteFiles.biteId, biteId), eq(biteFiles.filename, filename)));
+}
+
+// BITE PERMISSIONS QUERIES
+
+export async function addBitePermission(biteId: string, userId: number, role: "owner" | "developer" | "viewer") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.insert(bitePermissions).values({
+    biteId,
+    userId,
+    role,
+  });
+}
+
+export async function getBitePermissions(biteId: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(bitePermissions).where(eq(bitePermissions.biteId, biteId));
+}
+
+export async function updateBitePermission(biteId: string, userId: number, role: "owner" | "developer" | "viewer") {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .update(bitePermissions)
+    .set({ role })
+    .where(and(eq(bitePermissions.biteId, biteId), eq(bitePermissions.userId, userId)));
+}
+
+export async function deleteBitePermission(biteId: string, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .delete(bitePermissions)
+    .where(and(eq(bitePermissions.biteId, biteId), eq(bitePermissions.userId, userId)));
+}
+
+// BITE METADATA QUERIES
+
+export async function createBiteMetadata(biteId: string, metadata: { version?: string; dependencies?: string[] }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.insert(biteMetadata).values({
+    biteId,
+    version: metadata.version || "1.0.0",
+    dependencies: JSON.stringify(metadata.dependencies || []),
+  });
+}
+
+export async function getBiteMetadata(biteId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(biteMetadata).where(eq(biteMetadata.biteId, biteId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
