@@ -72,11 +72,6 @@ export default function Editor() {
         }
       }
     }
-      setBiteName(bite.name);
-      setBiteDescription(bite.description || "");
-      setFiles(bite.files || []);
-      setIsCreating(false);
-    }
   }, [bite]);
 
   const handleCreateBite = async () => {
